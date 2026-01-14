@@ -239,10 +239,10 @@ const MovementControls = ({
   }, []);
 
   useEffect(() => {
-    const handleClick = () => controlsRef.current?.lock();
-    gl.domElement.addEventListener('click', handleClick);
+    const handleDoubleClick = () => controlsRef.current?.lock();
+    gl.domElement.addEventListener('dblclick', handleDoubleClick);
     return () => {
-      gl.domElement.removeEventListener('click', handleClick);
+      gl.domElement.removeEventListener('dblclick', handleDoubleClick);
     };
   }, [gl]);
 
