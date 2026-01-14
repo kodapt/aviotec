@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ChangeEvent } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
+import type { ThreeEvent } from '@react-three/fiber';
 import { PointerLockControls } from '@react-three/drei';
 import * as THREE from 'three';
 
@@ -15,6 +16,11 @@ type Inputs = {
   hfovDeg: number;
   vfovDeg: number;
   rangeMax: number;
+};
+
+type CameraPlacement = {
+  position: [number, number, number];
+  normal: [number, number, number];
 };
 
 const DEFAULT_INPUTS: Inputs = {
@@ -41,11 +47,13 @@ const Room = ({
   roomWidth,
   roomHeight,
   wallThickness,
+  onWallPointerDown,
 }: {
   roomLength: number;
   roomWidth: number;
   roomHeight: number;
   wallThickness: number;
+  onWallPointerDown: (event: ThreeEvent<PointerEvent>) => void;
 }) => {
   const innerLength = Math.max(0.1, roomLength - wallThickness * 2);
   const innerWidth = Math.max(0.1, roomWidth - wallThickness * 2);
@@ -66,28 +74,64 @@ const Room = ({
       <mesh material={surfaceMaterial} rotation={[Math.PI / 2, 0, 0]} position={[roomLength / 2, roomHeight, roomWidth / 2]}>
         <planeGeometry args={[roomLength, roomWidth]} />
       </mesh>
-      <mesh material={wallMaterial} position={[roomLength / 2, roomHeight / 2, wallThickness / 2]}>
+      <mesh
+        material={wallMaterial}
+        position={[roomLength / 2, roomHeight / 2, wallThickness / 2]}
+        onPointerDown={onWallPointerDown}
+      >
         <boxGeometry args={[roomLength, roomHeight, wallThickness]} />
       </mesh>
-      <mesh material={wallMaterial} position={[roomLength / 2, roomHeight / 2, roomWidth - wallThickness / 2]}>
+      <mesh
+        material={wallMaterial}
+        position={[roomLength / 2, roomHeight / 2, roomWidth - wallThickness / 2]}
+        onPointerDown={onWallPointerDown}
+      >
         <boxGeometry args={[roomLength, roomHeight, wallThickness]} />
       </mesh>
-      <mesh material={wallMaterial} position={[wallThickness / 2, roomHeight / 2, roomWidth / 2]}>
+      <mesh
+        material={wallMaterial}
+        position={[wallThickness / 2, roomHeight / 2, roomWidth / 2]}
+        onPointerDown={onWallPointerDown}
+      >
         <boxGeometry args={[wallThickness, roomHeight, innerWidth]} />
       </mesh>
-      <mesh material={wallMaterial} position={[roomLength - wallThickness / 2, roomHeight / 2, roomWidth / 2]}>
+      <mesh
+        material={wallMaterial}
+        position={[roomLength - wallThickness / 2, roomHeight / 2, roomWidth / 2]}
+        onPointerDown={onWallPointerDown}
+      >
         <boxGeometry args={[wallThickness, roomHeight, innerWidth]} />
       </mesh>
     </group>
   );
 };
 
-const CameraMarker = ({ position }: { position: [number, number, number] }) => (
-  <mesh position={position}>
-    <sphereGeometry args={[0.12, 16, 16]} />
-    <meshStandardMaterial color="#3da3ff" />
-  </mesh>
-);
+const CameraMarker = ({
+  position,
+  normal,
+}: {
+  position: [number, number, number];
+  normal: [number, number, number];
+}) => {
+  const meshRef = useRef<THREE.Mesh | null>(null);
+
+  useEffect(() => {
+    if (!meshRef.current) {
+      return;
+    }
+    const targetDirection = new THREE.Vector3(-normal[0], -normal[1], -normal[2]).normalize();
+    const upDirection = new THREE.Vector3(0, 1, 0);
+    const quaternion = new THREE.Quaternion().setFromUnitVectors(upDirection, targetDirection);
+    meshRef.current.setRotationFromQuaternion(quaternion);
+  }, [normal]);
+
+  return (
+    <mesh ref={meshRef} position={position}>
+      <coneGeometry args={[0.14, 0.3, 16]} />
+      <meshStandardMaterial color="#3da3ff" />
+    </mesh>
+  );
+};
 
 const FootprintPlane = ({
   width,
@@ -98,7 +142,7 @@ const FootprintPlane = ({
   depth: number;
   center: [number, number, number];
 }) => (
-  <mesh rotation={[-Math.PI / 2, 0, 0]} position={center}>
+  <mesh rotation={[-Math.PI / 2, 0, 0]} position={center} raycast={() => null}>
     <planeGeometry args={[width, depth]} />
     <meshStandardMaterial color="#3da3ff" transparent opacity={0.35} side={THREE.DoubleSide} />
   </mesh>
@@ -189,6 +233,21 @@ const MovementControls = ({
 
 const Mode3DParam = () => {
   const [inputs, setInputs] = useState<Inputs>(DEFAULT_INPUTS);
+  const [cameraPlacement, setCameraPlacement] = useState<CameraPlacement>(() => ({
+    position: [DEFAULT_INPUTS.roomLength / 2, DEFAULT_INPUTS.cameraHeight, DEFAULT_INPUTS.roomWidth / 2],
+    normal: [0, 1, 0],
+  }));
+
+  useEffect(() => {
+    setCameraPlacement((prev) => ({
+      position: [
+        clamp(prev.position[0], inputs.wallThickness, inputs.roomLength - inputs.wallThickness),
+        clamp(inputs.cameraHeight, 0, inputs.roomHeight),
+        clamp(prev.position[2], inputs.wallThickness, inputs.roomWidth - inputs.wallThickness),
+      ],
+      normal: prev.normal,
+    }));
+  }, [inputs.cameraHeight, inputs.roomHeight, inputs.roomLength, inputs.roomWidth, inputs.wallThickness]);
 
   const footprint = useMemo(() => calcFootprint({
     cameraHeight: inputs.cameraHeight,
@@ -200,6 +259,36 @@ const Mode3DParam = () => {
   const clampedWidth = clamp(footprint.width, 0.1, inputs.roomLength);
   const clampedDepth = clamp(footprint.depth, 0.1, inputs.roomWidth);
   const clampedArea = clampedWidth * clampedDepth;
+
+  const handleWallPointerDown = (event: ThreeEvent<PointerEvent>) => {
+    event.stopPropagation();
+    if (!event.face) {
+      return;
+    }
+
+    const normalMatrix = new THREE.Matrix3().getNormalMatrix(event.object.matrixWorld);
+    const worldNormal = event.face.normal.clone().applyMatrix3(normalMatrix).normalize();
+
+    if (worldNormal.dot(event.ray.direction) > 0) {
+      worldNormal.multiplyScalar(-1);
+    }
+
+    const offsetPosition = event.point.clone().add(worldNormal.clone().multiplyScalar(0.05));
+
+    const nextPosition: [number, number, number] = [
+      offsetPosition.x,
+      offsetPosition.y,
+      offsetPosition.z,
+    ];
+
+    const nextNormal: [number, number, number] = [worldNormal.x, worldNormal.y, worldNormal.z];
+
+    setCameraPlacement({ position: nextPosition, normal: nextNormal });
+    setInputs((prev) => ({
+      ...prev,
+      cameraHeight: offsetPosition.y,
+    }));
+  };
 
   const handleChange = (key: keyof Inputs) => (event: ChangeEvent<HTMLInputElement>) => {
     setInputs((prev) => ({
@@ -331,6 +420,13 @@ const Mode3DParam = () => {
             />
           </label>
           <div style={{ marginTop: 8, fontSize: 13, color: 'var(--text)' }}>
+            <strong>Placement</strong>
+            <div>
+              Position: {cameraPlacement.position.map((value) => value.toFixed(2)).join(', ')}
+            </div>
+            <div>Mounting height: {cameraPlacement.position[1].toFixed(2)} m</div>
+          </div>
+          <div style={{ fontSize: 13, color: 'var(--text)' }}>
             <strong>Footprint</strong>
             <div>D: {footprint.d.toFixed(2)} m</div>
             <div>Width: {clampedWidth.toFixed(2)} m</div>
@@ -369,14 +465,16 @@ const Mode3DParam = () => {
               roomWidth={inputs.roomWidth}
               roomHeight={inputs.roomHeight}
               wallThickness={inputs.wallThickness}
+              onWallPointerDown={handleWallPointerDown}
             />
             <CameraMarker
-              position={[inputs.roomLength / 2, inputs.cameraHeight, inputs.roomWidth / 2]}
+              position={cameraPlacement.position}
+              normal={cameraPlacement.normal}
             />
             <FootprintPlane
               width={clampedWidth}
               depth={clampedDepth}
-              center={[inputs.roomLength / 2, 0.01, inputs.roomWidth / 2]}
+              center={[cameraPlacement.position[0], 0.01, cameraPlacement.position[2]]}
             />
             <MovementControls
               roomLength={inputs.roomLength}
