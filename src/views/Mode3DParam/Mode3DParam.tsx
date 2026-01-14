@@ -1,7 +1,13 @@
 import { calculateAviotec } from '../../rules';
 
 const Mode3DParam = () => {
-  const result = calculateAviotec({ mode: '3d-param', seed: 340 });
+  const result = calculateAviotec({
+    mountingHeightMeters: 10,
+    openingAngleDeg: 48.5,
+    focalLengthMm: 6.0,
+    minFlameWidthMeters: 0.5,
+    minSmokeWidthMeters: 0.75,
+  });
 
   return (
     <section className="panel">

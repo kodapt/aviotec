@@ -1,11 +1,13 @@
 export type AviotecInputs = {
-  mode: '2d' | '3d-param' | '3d-obj';
-  seed: number;
+  mountingHeightMeters: number;
+  openingAngleDeg: number;
+  focalLengthMm: number;
+  minFlameWidthMeters: number;
+  minSmokeWidthMeters: number;
 };
 
 export type AviotecOutputs = {
-  status: 'ok';
-  summary: string;
-  generatedAt: string;
-  echo: AviotecInputs;
+  flameMaxDistanceMeters: number;
+  smokeMaxDistanceMeters: number;
+  warnings: string[];
 };
