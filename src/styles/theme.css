@@ -119,6 +119,90 @@ body {
   font-size: 14px;
 }
 
+.mode2d {
+  gap: 24px;
+}
+
+.mode2d__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.mode2d__grid {
+  display: grid;
+  grid-template-columns: minmax(240px, 1fr) minmax(320px, 1.4fr);
+  gap: 24px;
+}
+
+.mode2d__panel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 16px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: #1f252b;
+}
+
+.mode2d__title {
+  margin: 0;
+  font-size: 16px;
+}
+
+.mode2d__form {
+  display: grid;
+  gap: 12px;
+}
+
+.mode2d__field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.mode2d__field input {
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: #14181d;
+  color: var(--text);
+  padding: 8px 10px;
+  font-size: 14px;
+}
+
+.mode2d__field input:focus {
+  outline: 2px solid rgba(61, 163, 255, 0.6);
+  border-color: var(--accent);
+}
+
+.mode2d__warnings {
+  border-radius: 10px;
+  border: 1px solid rgba(255, 196, 0, 0.3);
+  background: rgba(255, 196, 0, 0.08);
+  padding: 12px;
+  font-size: 13px;
+  color: #ffd479;
+}
+
+.mode2d__warnings h4 {
+  margin: 0 0 8px;
+  font-size: 13px;
+  color: #ffd479;
+}
+
+.mode2d__warnings ul {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.mode2d__diagram {
+  display: flex;
+  justify-content: center;
+}
+
 pre {
   margin: 0;
   padding: 16px;
