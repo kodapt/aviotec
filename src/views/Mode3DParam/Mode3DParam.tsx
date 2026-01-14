@@ -437,6 +437,12 @@ const Mode3DParam = () => {
     ? [cameraPlacement.position[0], 0.01, cameraPlacement.position[2]]
     : [inputs.roomLength / 2, 0.01, inputs.roomWidth / 2];
 
+  const handleInputsFocus = () => {
+    if (document.pointerLockElement) {
+      document.exitPointerLock();
+    }
+  };
+
   return (
     <section className="panel" style={{ gap: 24 }}>
       <h2>3D Param Workspace</h2>
@@ -460,6 +466,7 @@ const Mode3DParam = () => {
             flexDirection: 'column',
             gap: 12,
           }}
+          onFocusCapture={handleInputsFocus}
         >
           <h3 style={{ margin: 0, fontSize: 16 }}>Inputs</h3>
           <label style={{ display: 'grid', gap: 6, fontSize: 13, color: 'var(--muted)' }}>
