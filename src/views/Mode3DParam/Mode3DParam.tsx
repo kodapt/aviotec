@@ -46,6 +46,9 @@ const toSafeNumber = (value: string) => {
 const clamp = (value: number, min: number, max: number) =>
   Math.min(Math.max(value, min), max);
 
+const LOCK_TARGET_ID = 'mode3d-lock-target';
+const LOCK_TARGET_SELECTOR = `#${LOCK_TARGET_ID}`;
+
 const Room = ({
   roomLength,
   roomWidth,
@@ -259,7 +262,7 @@ const MovementControls = ({
     };
   }, [gl, onPointerLockChange]);
 
-  return <PointerLockControls ref={controlsRef} />;
+  return <PointerLockControls ref={controlsRef} selector={LOCK_TARGET_SELECTOR} />;
 };
 
 const AimRaycaster = ({
@@ -588,6 +591,7 @@ const Mode3DParam = () => {
             position: 'relative',
           }}
         >
+          <div id={LOCK_TARGET_ID} style={{ display: 'none' }} />
           {isEditing && (
             <div
               style={{
