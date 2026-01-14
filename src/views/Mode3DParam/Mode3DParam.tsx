@@ -169,11 +169,13 @@ const MovementControls = ({
   roomWidth,
   wallThickness,
   roomHeight,
+  onPointerLockChange,
 }: {
   roomLength: number;
   roomWidth: number;
   wallThickness: number;
   roomHeight: number;
+  onPointerLockChange?: (isLocked: boolean) => void;
 }) => {
   const controlsRef = useRef<{ lock: () => void } | null>(null);
   const { camera, gl } = useThree();
@@ -244,6 +246,19 @@ const MovementControls = ({
     };
   }, [gl]);
 
+  useEffect(() => {
+    if (!onPointerLockChange) {
+      return;
+    }
+    const handlePointerLockChange = () => {
+      onPointerLockChange(document.pointerLockElement === gl.domElement);
+    };
+    document.addEventListener('pointerlockchange', handlePointerLockChange);
+    return () => {
+      document.removeEventListener('pointerlockchange', handlePointerLockChange);
+    };
+  }, [gl, onPointerLockChange]);
+
   return <PointerLockControls ref={controlsRef} />;
 };
 
@@ -297,8 +312,14 @@ const Mode3DParam = () => {
   const [inputs, setInputs] = useState<Inputs>(DEFAULT_INPUTS);
   const [cameraPlacement, setCameraPlacement] = useState<CameraPlacement | null>(null);
   const [aimHit, setAimHit] = useState<AimHit | null>(null);
+  const [isEditing, setIsEditing] = useState(false);
   const aimHitRef = useRef<AimHit | null>(null);
   const wallMeshesRef = useRef<THREE.Mesh[]>([]);
+  const isEditingRef = useRef(false);
+
+  useEffect(() => {
+    isEditingRef.current = isEditing;
+  }, [isEditing]);
 
   useEffect(() => {
     setCameraPlacement((prev) => {
@@ -317,7 +338,7 @@ const Mode3DParam = () => {
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.repeat || event.code !== 'KeyE') {
+      if (!isEditingRef.current || event.repeat || event.code !== 'KeyE') {
         return;
       }
       const hit = aimHitRef.current;
@@ -347,6 +368,13 @@ const Mode3DParam = () => {
       window.removeEventListener('keydown', handleKeyDown);
     };
   }, []);
+
+  useEffect(() => {
+    if (!isEditing) {
+      aimHitRef.current = null;
+      setAimHit(null);
+    }
+  }, [isEditing]);
 
   const footprint = useMemo(() => calcFootprint({
     cameraHeight: inputs.cameraHeight,
@@ -553,41 +581,43 @@ const Mode3DParam = () => {
             position: 'relative',
           }}
         >
-          <div
-            style={{
-              position: 'absolute',
-              top: '50%',
-              left: '50%',
-              width: 18,
-              height: 18,
-              transform: 'translate(-50%, -50%)',
-              pointerEvents: 'none',
-              zIndex: 2,
-            }}
-          >
+          {isEditing && (
             <div
               style={{
                 position: 'absolute',
                 top: '50%',
-                left: 0,
-                width: '100%',
-                height: 2,
-                background: 'rgba(255, 255, 255, 0.7)',
-                transform: 'translateY(-50%)',
-              }}
-            />
-            <div
-              style={{
-                position: 'absolute',
                 left: '50%',
-                top: 0,
-                width: 2,
-                height: '100%',
-                background: 'rgba(255, 255, 255, 0.7)',
-                transform: 'translateX(-50%)',
+                width: 18,
+                height: 18,
+                transform: 'translate(-50%, -50%)',
+                pointerEvents: 'none',
+                zIndex: 2,
               }}
-            />
-          </div>
+            >
+              <div
+                style={{
+                  position: 'absolute',
+                  top: '50%',
+                  left: 0,
+                  width: '100%',
+                  height: 2,
+                  background: 'rgba(255, 255, 255, 0.7)',
+                  transform: 'translateY(-50%)',
+                }}
+              />
+              <div
+                style={{
+                  position: 'absolute',
+                  left: '50%',
+                  top: 0,
+                  width: 2,
+                  height: '100%',
+                  background: 'rgba(255, 255, 255, 0.7)',
+                  transform: 'translateX(-50%)',
+                }}
+              />
+            </div>
+          )}
           <Canvas
             camera={{
               position: [inputs.roomLength / 2, 1.6, inputs.roomWidth * 0.2],
@@ -618,7 +648,7 @@ const Mode3DParam = () => {
                 normal={cameraPlacement.normal}
               />
             )}
-            {aimHit && ghostPosition && (
+            {isEditing && aimHit && ghostPosition && (
               <CameraMarker
                 position={ghostPosition}
                 normal={aimHit.normal}
@@ -632,12 +662,15 @@ const Mode3DParam = () => {
               depth={clampedDepth}
               center={footprintCenter}
             />
-            <AimRaycaster wallMeshesRef={wallMeshesRef} onAimHit={handleAimHit} />
+            {isEditing && (
+              <AimRaycaster wallMeshesRef={wallMeshesRef} onAimHit={handleAimHit} />
+            )}
             <MovementControls
               roomLength={inputs.roomLength}
               roomWidth={inputs.roomWidth}
               wallThickness={inputs.wallThickness}
               roomHeight={inputs.roomHeight}
+              onPointerLockChange={setIsEditing}
             />
           </Canvas>
         </div>
