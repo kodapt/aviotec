@@ -50,11 +50,11 @@ const Room = ({
   const innerLength = Math.max(0.1, roomLength - wallThickness * 2);
   const innerWidth = Math.max(0.1, roomWidth - wallThickness * 2);
   const wallMaterial = useMemo(
-    () => new THREE.MeshStandardMaterial({ color: '#2b3138', side: THREE.DoubleSide }),
+    () => new THREE.MeshStandardMaterial({ color: '#555c64', side: THREE.DoubleSide }),
     [],
   );
   const surfaceMaterial = useMemo(
-    () => new THREE.MeshStandardMaterial({ color: '#1f252b', side: THREE.DoubleSide }),
+    () => new THREE.MeshStandardMaterial({ color: '#4b5158', side: THREE.DoubleSide }),
     [],
   );
 
@@ -354,8 +354,16 @@ const Mode3DParam = () => {
             }}
             style={{ height: '100%', width: '100%' }}
           >
-            <ambientLight intensity={0.5} />
-            <directionalLight position={[5, 8, 5]} intensity={0.8} />
+            <ambientLight intensity={0.7} />
+            <directionalLight intensity={0.8} position={[10, 10, 5]} />
+            <pointLight
+              intensity={0.8}
+              position={[inputs.roomLength / 2, inputs.roomHeight * 0.8, inputs.roomWidth / 2]}
+            />
+            <pointLight
+              intensity={0.6}
+              position={[inputs.roomLength / 4, inputs.roomHeight * 0.5, inputs.roomWidth / 3]}
+            />
             <Room
               roomLength={inputs.roomLength}
               roomWidth={inputs.roomWidth}
