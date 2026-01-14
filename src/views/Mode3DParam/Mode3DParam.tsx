@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { ChangeEvent } from 'react';
+import type { ChangeEvent, MutableRefObject } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
-import type { ThreeEvent } from '@react-three/fiber';
 import { PointerLockControls } from '@react-three/drei';
 import * as THREE from 'three';
 
@@ -20,6 +19,11 @@ type Inputs = {
 
 type CameraPlacement = {
   position: [number, number, number];
+  normal: [number, number, number];
+};
+
+type AimHit = {
+  point: [number, number, number];
   normal: [number, number, number];
 };
 
@@ -47,13 +51,13 @@ const Room = ({
   roomWidth,
   roomHeight,
   wallThickness,
-  onWallPointerDown,
+  wallMeshesRef,
 }: {
   roomLength: number;
   roomWidth: number;
   roomHeight: number;
   wallThickness: number;
-  onWallPointerDown: (event: ThreeEvent<PointerEvent>) => void;
+  wallMeshesRef: MutableRefObject<THREE.Mesh[]>;
 }) => {
   const innerLength = Math.max(0.1, roomLength - wallThickness * 2);
   const innerWidth = Math.max(0.1, roomWidth - wallThickness * 2);
@@ -66,6 +70,12 @@ const Room = ({
     [],
   );
 
+  const setWallRef = (index: number) => (node: THREE.Mesh | null) => {
+    if (node) {
+      wallMeshesRef.current[index] = node;
+    }
+  };
+
   return (
     <group>
       <mesh material={surfaceMaterial} rotation={[-Math.PI / 2, 0, 0]} position={[roomLength / 2, 0, roomWidth / 2]}>
@@ -77,28 +87,28 @@ const Room = ({
       <mesh
         material={wallMaterial}
         position={[roomLength / 2, roomHeight / 2, wallThickness / 2]}
-        onPointerDown={onWallPointerDown}
+        ref={setWallRef(0)}
       >
         <boxGeometry args={[roomLength, roomHeight, wallThickness]} />
       </mesh>
       <mesh
         material={wallMaterial}
         position={[roomLength / 2, roomHeight / 2, roomWidth - wallThickness / 2]}
-        onPointerDown={onWallPointerDown}
+        ref={setWallRef(1)}
       >
         <boxGeometry args={[roomLength, roomHeight, wallThickness]} />
       </mesh>
       <mesh
         material={wallMaterial}
         position={[wallThickness / 2, roomHeight / 2, roomWidth / 2]}
-        onPointerDown={onWallPointerDown}
+        ref={setWallRef(2)}
       >
         <boxGeometry args={[wallThickness, roomHeight, innerWidth]} />
       </mesh>
       <mesh
         material={wallMaterial}
         position={[roomLength - wallThickness / 2, roomHeight / 2, roomWidth / 2]}
-        onPointerDown={onWallPointerDown}
+        ref={setWallRef(3)}
       >
         <boxGeometry args={[wallThickness, roomHeight, innerWidth]} />
       </mesh>
@@ -109,9 +119,15 @@ const Room = ({
 const CameraMarker = ({
   position,
   normal,
+  opacity = 1,
+  color = '#3da3ff',
+  disableRaycast = false,
 }: {
   position: [number, number, number];
   normal: [number, number, number];
+  opacity?: number;
+  color?: string;
+  disableRaycast?: boolean;
 }) => {
   const meshRef = useRef<THREE.Mesh | null>(null);
 
@@ -126,9 +142,9 @@ const CameraMarker = ({
   }, [normal]);
 
   return (
-    <mesh ref={meshRef} position={position}>
+    <mesh ref={meshRef} position={position} raycast={disableRaycast ? () => null : undefined}>
       <coneGeometry args={[0.14, 0.3, 16]} />
-      <meshStandardMaterial color="#3da3ff" />
+      <meshStandardMaterial color={color} transparent={opacity < 1} opacity={opacity} />
     </mesh>
   );
 };
@@ -231,23 +247,106 @@ const MovementControls = ({
   return <PointerLockControls ref={controlsRef} />;
 };
 
+const AimRaycaster = ({
+  wallMeshesRef,
+  onAimHit,
+}: {
+  wallMeshesRef: MutableRefObject<THREE.Mesh[]>;
+  onAimHit: (hit: AimHit | null) => void;
+}) => {
+  const { camera } = useThree();
+  const raycasterRef = useRef(new THREE.Raycaster());
+  const elapsedRef = useRef(0);
+
+  useFrame((_, delta) => {
+    elapsedRef.current += delta;
+    if (elapsedRef.current < 1 / 30) {
+      return;
+    }
+    elapsedRef.current = 0;
+
+    const direction = new THREE.Vector3();
+    camera.getWorldDirection(direction);
+    raycasterRef.current.set(camera.position, direction);
+    const wallMeshes = wallMeshesRef.current.filter((mesh): mesh is THREE.Mesh => Boolean(mesh));
+    const intersections = raycasterRef.current.intersectObjects(wallMeshes, false);
+    const hit = intersections[0];
+
+    if (!hit || !hit.face) {
+      onAimHit(null);
+      return;
+    }
+
+    const normalMatrix = new THREE.Matrix3().getNormalMatrix(hit.object.matrixWorld);
+    const worldNormal = hit.face.normal.clone().applyMatrix3(normalMatrix).normalize();
+
+    if (worldNormal.dot(direction) > 0) {
+      worldNormal.multiplyScalar(-1);
+    }
+
+    onAimHit({
+      point: [hit.point.x, hit.point.y, hit.point.z],
+      normal: [worldNormal.x, worldNormal.y, worldNormal.z],
+    });
+  });
+
+  return null;
+};
+
 const Mode3DParam = () => {
   const [inputs, setInputs] = useState<Inputs>(DEFAULT_INPUTS);
-  const [cameraPlacement, setCameraPlacement] = useState<CameraPlacement>(() => ({
-    position: [DEFAULT_INPUTS.roomLength / 2, DEFAULT_INPUTS.cameraHeight, DEFAULT_INPUTS.roomWidth / 2],
-    normal: [0, 1, 0],
-  }));
+  const [cameraPlacement, setCameraPlacement] = useState<CameraPlacement | null>(null);
+  const [aimHit, setAimHit] = useState<AimHit | null>(null);
+  const aimHitRef = useRef<AimHit | null>(null);
+  const wallMeshesRef = useRef<THREE.Mesh[]>([]);
 
   useEffect(() => {
-    setCameraPlacement((prev) => ({
-      position: [
+    setCameraPlacement((prev) => {
+      if (!prev) {
+        return prev;
+      }
+      const nextPosition: [number, number, number] = [
         clamp(prev.position[0], inputs.wallThickness, inputs.roomLength - inputs.wallThickness),
         clamp(inputs.cameraHeight, 0, inputs.roomHeight),
         clamp(prev.position[2], inputs.wallThickness, inputs.roomWidth - inputs.wallThickness),
-      ],
-      normal: prev.normal,
-    }));
+      ];
+      const isSame = prev.position.every((value, index) => value === nextPosition[index]);
+      return isSame ? prev : { position: nextPosition, normal: prev.normal };
+    });
   }, [inputs.cameraHeight, inputs.roomHeight, inputs.roomLength, inputs.roomWidth, inputs.wallThickness]);
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.repeat || event.code !== 'KeyE') {
+        return;
+      }
+      const hit = aimHitRef.current;
+      if (!hit) {
+        return;
+      }
+      const offsetPosition = new THREE.Vector3(...hit.point).add(
+        new THREE.Vector3(...hit.normal).multiplyScalar(0.05),
+      );
+
+      const nextPosition: [number, number, number] = [
+        offsetPosition.x,
+        offsetPosition.y,
+        offsetPosition.z,
+      ];
+      const nextNormal: [number, number, number] = [...hit.normal];
+
+      setCameraPlacement({ position: nextPosition, normal: nextNormal });
+      setInputs((prev) => ({
+        ...prev,
+        cameraHeight: offsetPosition.y,
+      }));
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, []);
 
   const footprint = useMemo(() => calcFootprint({
     cameraHeight: inputs.cameraHeight,
@@ -260,34 +359,24 @@ const Mode3DParam = () => {
   const clampedDepth = clamp(footprint.depth, 0.1, inputs.roomWidth);
   const clampedArea = clampedWidth * clampedDepth;
 
-  const handleWallPointerDown = (event: ThreeEvent<PointerEvent>) => {
-    event.stopPropagation();
-    if (!event.face) {
+  const handleAimHit = (nextHit: AimHit | null) => {
+    if (!nextHit) {
+      if (aimHitRef.current !== null) {
+        aimHitRef.current = null;
+        setAimHit(null);
+      }
       return;
     }
 
-    const normalMatrix = new THREE.Matrix3().getNormalMatrix(event.object.matrixWorld);
-    const worldNormal = event.face.normal.clone().applyMatrix3(normalMatrix).normalize();
+    const previous = aimHitRef.current;
+    aimHitRef.current = nextHit;
+    const hasChanged = !previous
+      || previous.point.some((value, index) => Math.abs(value - nextHit.point[index]) > 0.001)
+      || previous.normal.some((value, index) => Math.abs(value - nextHit.normal[index]) > 0.001);
 
-    if (worldNormal.dot(event.ray.direction) > 0) {
-      worldNormal.multiplyScalar(-1);
+    if (hasChanged) {
+      setAimHit(nextHit);
     }
-
-    const offsetPosition = event.point.clone().add(worldNormal.clone().multiplyScalar(0.05));
-
-    const nextPosition: [number, number, number] = [
-      offsetPosition.x,
-      offsetPosition.y,
-      offsetPosition.z,
-    ];
-
-    const nextNormal: [number, number, number] = [worldNormal.x, worldNormal.y, worldNormal.z];
-
-    setCameraPlacement({ position: nextPosition, normal: nextNormal });
-    setInputs((prev) => ({
-      ...prev,
-      cameraHeight: offsetPosition.y,
-    }));
   };
 
   const handleChange = (key: keyof Inputs) => (event: ChangeEvent<HTMLInputElement>) => {
@@ -305,6 +394,20 @@ const Mode3DParam = () => {
     padding: '8px 10px',
     fontSize: 14,
   } as const;
+
+  const ghostPosition = useMemo(() => {
+    if (!aimHit) {
+      return null;
+    }
+    const offset = new THREE.Vector3(...aimHit.point).add(
+      new THREE.Vector3(...aimHit.normal).multiplyScalar(0.05),
+    );
+    return [offset.x, offset.y, offset.z] as [number, number, number];
+  }, [aimHit]);
+
+  const footprintCenter: [number, number, number] = cameraPlacement
+    ? [cameraPlacement.position[0], 0.01, cameraPlacement.position[2]]
+    : [inputs.roomLength / 2, 0.01, inputs.roomWidth / 2];
 
   return (
     <section className="panel" style={{ gap: 24 }}>
@@ -421,10 +524,16 @@ const Mode3DParam = () => {
           </label>
           <div style={{ marginTop: 8, fontSize: 13, color: 'var(--text)' }}>
             <strong>Placement</strong>
-            <div>
-              Position: {cameraPlacement.position.map((value) => value.toFixed(2)).join(', ')}
-            </div>
-            <div>Mounting height: {cameraPlacement.position[1].toFixed(2)} m</div>
+            {cameraPlacement ? (
+              <>
+                <div>
+                  Position: {cameraPlacement.position.map((value) => value.toFixed(2)).join(', ')}
+                </div>
+                <div>Mounting height: {cameraPlacement.position[1].toFixed(2)} m</div>
+              </>
+            ) : (
+              <div>Not placed yet (press E to place).</div>
+            )}
           </div>
           <div style={{ fontSize: 13, color: 'var(--text)' }}>
             <strong>Footprint</strong>
@@ -441,8 +550,44 @@ const Mode3DParam = () => {
             borderRadius: 12,
             minHeight: 520,
             overflow: 'hidden',
+            position: 'relative',
           }}
         >
+          <div
+            style={{
+              position: 'absolute',
+              top: '50%',
+              left: '50%',
+              width: 18,
+              height: 18,
+              transform: 'translate(-50%, -50%)',
+              pointerEvents: 'none',
+              zIndex: 2,
+            }}
+          >
+            <div
+              style={{
+                position: 'absolute',
+                top: '50%',
+                left: 0,
+                width: '100%',
+                height: 2,
+                background: 'rgba(255, 255, 255, 0.7)',
+                transform: 'translateY(-50%)',
+              }}
+            />
+            <div
+              style={{
+                position: 'absolute',
+                left: '50%',
+                top: 0,
+                width: 2,
+                height: '100%',
+                background: 'rgba(255, 255, 255, 0.7)',
+                transform: 'translateX(-50%)',
+              }}
+            />
+          </div>
           <Canvas
             camera={{
               position: [inputs.roomLength / 2, 1.6, inputs.roomWidth * 0.2],
@@ -465,17 +610,29 @@ const Mode3DParam = () => {
               roomWidth={inputs.roomWidth}
               roomHeight={inputs.roomHeight}
               wallThickness={inputs.wallThickness}
-              onWallPointerDown={handleWallPointerDown}
+              wallMeshesRef={wallMeshesRef}
             />
-            <CameraMarker
-              position={cameraPlacement.position}
-              normal={cameraPlacement.normal}
-            />
+            {cameraPlacement && (
+              <CameraMarker
+                position={cameraPlacement.position}
+                normal={cameraPlacement.normal}
+              />
+            )}
+            {aimHit && ghostPosition && (
+              <CameraMarker
+                position={ghostPosition}
+                normal={aimHit.normal}
+                opacity={0.4}
+                color="#9bd1ff"
+                disableRaycast
+              />
+            )}
             <FootprintPlane
               width={clampedWidth}
               depth={clampedDepth}
-              center={[cameraPlacement.position[0], 0.01, cameraPlacement.position[2]]}
+              center={footprintCenter}
             />
+            <AimRaycaster wallMeshesRef={wallMeshesRef} onAimHit={handleAimHit} />
             <MovementControls
               roomLength={inputs.roomLength}
               roomWidth={inputs.roomWidth}
