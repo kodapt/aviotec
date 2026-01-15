@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ChangeEvent, MutableRefObject } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { PointerLockControls } from '@react-three/drei';
+import type { PointerLockControls as PointerLockControlsImpl } from 'three-stdlib';
 import * as THREE from 'three';
 
 import { calcFootprint } from '../../rules';
@@ -173,14 +174,18 @@ const MovementControls = ({
   wallThickness,
   roomHeight,
   onPointerLockChange,
+  cameraRef,
+  controlsRef: controlsRefExternal,
 }: {
   roomLength: number;
   roomWidth: number;
   wallThickness: number;
   roomHeight: number;
   onPointerLockChange?: (isLocked: boolean) => void;
+  cameraRef?: MutableRefObject<THREE.PerspectiveCamera | null>;
+  controlsRef?: MutableRefObject<PointerLockControlsImpl | null>;
 }) => {
-  const controlsRef = useRef<{ lock: () => void } | null>(null);
+  const controlsRef = useRef<PointerLockControlsImpl | null>(null);
   const { camera, gl } = useThree();
   const keys = useRef({ forward: false, back: false, left: false, right: false });
 
@@ -216,6 +221,18 @@ const MovementControls = ({
   useEffect(() => {
     camera.position.set(roomLength / 2, 1.6, roomWidth * 0.2);
   }, [camera, roomLength, roomWidth]);
+
+  useEffect(() => {
+    if (cameraRef) {
+      cameraRef.current = camera as THREE.PerspectiveCamera;
+    }
+  }, [camera, cameraRef]);
+
+  useEffect(() => {
+    if (controlsRefExternal) {
+      controlsRefExternal.current = controlsRef.current;
+    }
+  });
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -319,6 +336,7 @@ const Mode3DParam = () => {
   const aimHitRef = useRef<AimHit | null>(null);
   const wallMeshesRef = useRef<THREE.Mesh[]>([]);
   const isEditingRef = useRef(false);
+  const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
 
   useEffect(() => {
     isEditingRef.current = isEditing;
@@ -444,6 +462,37 @@ const Mode3DParam = () => {
     if (document.pointerLockElement) {
       document.exitPointerLock();
     }
+  };
+
+  const getStartPosition = () => [inputs.roomLength / 2, 1.6, inputs.roomWidth * 0.2] as const;
+
+  const resetLookDirection = () => {
+    if (!cameraRef.current) {
+      return;
+    }
+    cameraRef.current.rotation.set(0, 0, 0);
+    cameraRef.current.quaternion.set(0, 0, 0, 1);
+  };
+
+  const handleResetView = () => {
+    if (!cameraRef.current) {
+      return;
+    }
+    const [x, y, z] = getStartPosition();
+    cameraRef.current.position.set(x, y, z);
+    resetLookDirection();
+  };
+
+  const handleCenterInRoom = () => {
+    if (!cameraRef.current) {
+      return;
+    }
+    cameraRef.current.position.set(inputs.roomLength / 2, 1.6, inputs.roomWidth / 2);
+    resetLookDirection();
+  };
+
+  const handleClearCamera = () => {
+    setCameraPlacement(null);
   };
 
   return (
@@ -592,6 +641,94 @@ const Mode3DParam = () => {
           }}
         >
           <div id={LOCK_TARGET_ID} style={{ display: 'none' }} />
+          <div
+            style={{
+              position: 'absolute',
+              top: 16,
+              left: 16,
+              right: 16,
+              display: 'flex',
+              alignItems: 'flex-start',
+              justifyContent: 'space-between',
+              gap: 16,
+              pointerEvents: 'none',
+              zIndex: 2,
+            }}
+          >
+            <div
+              style={{
+                background: 'rgba(12, 16, 20, 0.75)',
+                border: '1px solid rgba(255, 255, 255, 0.08)',
+                borderRadius: 10,
+                padding: '10px 12px',
+                fontSize: 12,
+                color: 'rgba(255, 255, 255, 0.8)',
+                display: 'grid',
+                gap: 4,
+                pointerEvents: 'none',
+              }}
+            >
+              <div style={{ fontWeight: 600, color: 'white', fontSize: 13 }}>Navigation</div>
+              <div>Click: lock mouse</div>
+              <div>WASD: move</div>
+              <div>Mouse: look</div>
+              <div>E: place camera</div>
+              <div>Esc: unlock</div>
+            </div>
+            <div
+              style={{
+                display: 'flex',
+                gap: 8,
+                pointerEvents: 'auto',
+              }}
+            >
+              <button
+                type="button"
+                onClick={handleResetView}
+                style={{
+                  borderRadius: 8,
+                  border: '1px solid rgba(255, 255, 255, 0.2)',
+                  background: '#101418',
+                  color: 'white',
+                  padding: '8px 12px',
+                  fontSize: 12,
+                  cursor: 'pointer',
+                }}
+              >
+                Reset View
+              </button>
+              <button
+                type="button"
+                onClick={handleCenterInRoom}
+                style={{
+                  borderRadius: 8,
+                  border: '1px solid rgba(255, 255, 255, 0.2)',
+                  background: '#101418',
+                  color: 'white',
+                  padding: '8px 12px',
+                  fontSize: 12,
+                  cursor: 'pointer',
+                }}
+              >
+                Center in Room
+              </button>
+              <button
+                type="button"
+                onClick={handleClearCamera}
+                style={{
+                  borderRadius: 8,
+                  border: '1px solid rgba(255, 255, 255, 0.2)',
+                  background: '#101418',
+                  color: 'white',
+                  padding: '8px 12px',
+                  fontSize: 12,
+                  cursor: 'pointer',
+                }}
+              >
+                Clear Camera
+              </button>
+            </div>
+          </div>
           {isEditing && (
             <div
               style={{
@@ -682,6 +819,7 @@ const Mode3DParam = () => {
               wallThickness={inputs.wallThickness}
               roomHeight={inputs.roomHeight}
               onPointerLockChange={setIsEditing}
+              cameraRef={cameraRef}
             />
           </Canvas>
         </div>
