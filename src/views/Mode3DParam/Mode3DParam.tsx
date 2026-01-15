@@ -63,7 +63,6 @@ const Room = ({
   wallThickness: number;
   wallMeshesRef: MutableRefObject<THREE.Mesh[]>;
 }) => {
-  const innerLength = Math.max(0.1, roomLength - wallThickness * 2);
   const innerWidth = Math.max(0.1, roomWidth - wallThickness * 2);
   const wallMaterial = useMemo(
     () => new THREE.MeshStandardMaterial({ color: '#555c64', side: THREE.DoubleSide }),
